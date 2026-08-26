@@ -1,0 +1,25 @@
+{
+  "name": "@eventblast/whatsapp",
+  "version": "1.0.0",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@eventblast/types": "*",
+    "@eventblast/shared": "*",
+    "axios": "^1.6.8",
+    "qrcode": "^1.5.3"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.12.7",
+    "@types/qrcode": "^1.5.5",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "typescript": "^5.4.5"
+  }
+}

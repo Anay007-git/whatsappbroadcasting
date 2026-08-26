@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: eventblast-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eventblast}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eventblast_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-eventblast_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventblast -d eventblast_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eventblast-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: eventblast-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eventblast-internal
+
+  openwa:
+    image: openwa/wa-automate:latest
+    container_name: eventblast-openwa
+    restart: unless-stopped
+    environment:
+      PORT: 2785
+      API_KEY: ${OPENWA_API_KEY:-your_openwa_api_secret_key}
+      WEBHOOK_URL: http://api:4000/api/webhooks/openwa
+    volumes:
+      - openwa_sessions:/root/.openwa
+    networks:
+      - eventblast-internal
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: eventblast-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://eventblast:eventblast_secret@postgres:5432/eventblast_db?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_key_change_in_production_min_32_chars_long!}
+      OPENWA_BASE_URL: http://openwa:2785
+      OPENWA_API_KEY: ${OPENWA_API_KEY:-your_openwa_api_secret_key}
+      OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-your_openwa_webhook_secret_key}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-openwa}
+      APP_URL: ${APP_URL:-http://localhost:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - eventblast-internal
+
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: eventblast-worker
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://eventblast:eventblast_secret@postgres:5432/eventblast_db?schema=public
+      REDIS_URL: redis://redis:6379
+      OPENWA_BASE_URL: http://openwa:2785
+      OPENWA_API_KEY: ${OPENWA_API_KEY:-your_openwa_api_secret_key}
+      WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-openwa}
+      MESSAGE_MIN_DELAY_MS: ${MESSAGE_MIN_DELAY_MS:-1000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - eventblast-internal
+
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+    container_name: eventblast-web
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      API_URL: http://api:4000
+    depends_on:
+      - api
+    networks:
+      - eventblast-internal
+
+  reverse-proxy:
+    image: nginx:alpine
+    container_name: eventblast-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./infrastructure/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - web
+      - api
+    networks:
+      - eventblast-internal
+
+volumes:
+  postgres_data:
+  redis_data:
+  openwa_sessions:
+
+networks:
+  eventblast-internal:
+    driver: bridge

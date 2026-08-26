@@ -1,0 +1,26 @@
+{
+  "name": "@eventblast/worker",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/main.js",
+    "start:dev": "ts-node src/main.ts",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@eventblast/database": "*",
+    "@eventblast/shared": "*",
+    "@eventblast/types": "*",
+    "@eventblast/whatsapp": "*",
+    "bullmq": "^5.7.14",
+    "date-fns": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.12.7",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.4.5"
+  }
+}

@@ -1,0 +1,31 @@
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+COPY package.json package-lock.json* ./
+COPY packages/ ./packages/
+COPY apps/worker/ ./apps/worker/
+COPY tsconfig.base.json ./
+
+RUN npm ci
+RUN npm --workspace=packages/database run generate
+RUN npm --workspace=packages/types run build
+RUN npm --workspace=packages/shared run build
+RUN npm --workspace=packages/validation run build
+RUN npm --workspace=packages/whatsapp run build
+RUN npm --workspace=packages/database run build
+RUN npm --workspace=apps/worker run build
+
+FROM node:20-alpine AS runner
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+COPY --from=builder /app/package.json ./
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages ./packages
+COPY --from=builder /app/apps/worker/dist ./apps/worker/dist
+COPY --from=builder /app/apps/worker/package.json ./apps/worker/package.json
+
+CMD ["node", "apps/worker/dist/main.js"]
