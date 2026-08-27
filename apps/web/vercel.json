@@ -1,5 +1,0 @@
-{
-  "buildCommand": "npm --workspace=packages/types run build && npm --workspace=packages/shared run build && npm --workspace=packages/validation run build && npm --workspace=apps/web run build",
-  "outputDirectory": "apps/web/.next",
-  "framework": "nextjs"
-}
