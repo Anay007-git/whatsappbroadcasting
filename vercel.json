@@ -1,6 +1,0 @@
-{
-  "buildCommand": "cd packages/types && npx tsc && cd ../shared && npx tsc && cd ../validation && npx tsc && cd ../../apps/web && npx next build",
-  "outputDirectory": "apps/web/.next",
-  "installCommand": "npm install",
-  "framework": null
-}

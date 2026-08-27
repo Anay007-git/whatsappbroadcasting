@@ -1,0 +1,3 @@
+{
+  "buildCommand": "cd ../.. && npm install && cd packages/types && npx tsc && cd ../shared && npx tsc && cd ../validation && npx tsc && cd ../../apps/web && npx next build"
+}
