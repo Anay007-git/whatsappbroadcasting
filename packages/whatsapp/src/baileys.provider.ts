@@ -30,6 +30,9 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     }
   > = new Map();
 
+  // Message store for getMessage callback (required by Baileys v6+)
+  private messageStore: Map<string, proto.IWebMessageInfo> = new Map();
+
   private getAuthDir(sessionId: string): string {
     const authDir = path.join(process.cwd(), '.baileys_auth', sessionId);
     if (!fs.existsSync(authDir)) {
@@ -59,18 +62,38 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     const sock = makeWASocket({
       auth: state,
       printQRInTerminal: false,
-      logger: pino({ level: 'silent' }) as any,
-      browser: ['EventBlast Enterprise', 'Chrome', '124.0.0'],
+      logger: pino({ level: 'warn' }) as any,
+      browser: ['EventBlast', 'Chrome', '124.0.0'],
       syncFullHistory: false,
+      markOnlineOnConnect: true,
+      getMessage: async (key) => {
+        const stored = this.messageStore.get(key.id || '');
+        return stored?.message || undefined;
+      },
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // Store sent messages for retry support
+    sock.ev.on('messages.upsert', ({ messages }) => {
+      for (const msg of messages) {
+        if (msg.key?.id) {
+          this.messageStore.set(msg.key.id, msg);
+        }
+      }
+      // Keep store size reasonable
+      if (this.messageStore.size > 1000) {
+        const keys = Array.from(this.messageStore.keys());
+        for (let i = 0; i < 500; i++) {
+          this.messageStore.delete(keys[i]);
+        }
+      }
+    });
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
-        // Generate real multi-device cryptographic QR Data URL
         try {
           const qrDataUrl = await QRCode.toDataURL(qr);
           const current = this.sessionState.get(sessionId) || { status: WhatsAppSessionStatus.QR_READY, lastUpdated: new Date() };
@@ -78,14 +101,13 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
           current.status = WhatsAppSessionStatus.QR_READY;
           current.lastUpdated = new Date();
           this.sessionState.set(sessionId, current);
-        } catch (err) {
-          // Ignore QR generation error
-        }
+        } catch (err) {}
       }
 
       if (connection === 'open') {
         const userJid = sock.user?.id || '';
         const phone = userJid.split(':')[0] || userJid.split('@')[0];
+        console.log(`[Baileys] Session ${sessionId} CONNECTED as +${phone}`);
 
         this.sessionState.set(sessionId, {
           status: WhatsAppSessionStatus.CONNECTED,
@@ -96,8 +118,9 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       }
 
       if (connection === 'close') {
-        const shouldReconnect =
-          (lastDisconnect?.error as any)?.output?.statusCode !== DisconnectReason.loggedOut;
+        const statusCode = (lastDisconnect?.error as any)?.output?.statusCode;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        console.log(`[Baileys] Session ${sessionId} DISCONNECTED (code: ${statusCode}, reconnect: ${shouldReconnect})`);
 
         this.sessionState.set(sessionId, {
           status: WhatsAppSessionStatus.DISCONNECTED,
@@ -130,7 +153,6 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   async getSessionStatus(sessionId: string): Promise<WhatsAppSessionInfo> {
     const cached = this.sessionState.get(sessionId);
     if (!cached && !this.sockets.has(sessionId)) {
-      // Auto-start socket in background to retrieve status or QR
       this.startSession(sessionId).catch(() => {});
     }
 
@@ -143,10 +165,6 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
   }
 
   async getQRCode(sessionId: string): Promise<string | null> {
-    const cached = this.sessionState.get(sessionId);
-    if (cached?.qrCode) {
-      return cached.qrCode;
-    }
     if (!this.sockets.has(sessionId)) {
       await this.startSession(sessionId);
     }
@@ -170,6 +188,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
     if (!sock) {
       await this.startSession(sessionId);
+      await new Promise((r) => setTimeout(r, 3000));
       sock = this.sockets.get(sessionId);
     }
 
@@ -177,82 +196,64 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       return {
         success: false,
         status: 'FAILED',
-        error: 'WhatsApp socket connection is not ready. Please pair QR code first.',
+        error: 'WhatsApp socket not ready. Please scan QR code first.',
         timestamp: new Date(),
       };
     }
 
     const targetJid = this.formatJid(to);
     const cleanedDigits = targetJid.split('@')[0];
+    console.log(`[Baileys] Sending to ${targetJid}...`);
 
-    // Verify the number is registered on WhatsApp
+    // Verify number is on WhatsApp
     try {
       const check = await sock.onWhatsApp(cleanedDigits);
+      console.log(`[Baileys] onWhatsApp(${cleanedDigits}):`, JSON.stringify(check));
       if (check && check.length > 0 && !check[0]?.exists) {
         return {
           success: false,
           status: 'FAILED',
-          error: `Phone number +${cleanedDigits} is not registered on WhatsApp.`,
+          error: `+${cleanedDigits} is not registered on WhatsApp.`,
           timestamp: new Date(),
         };
       }
-    } catch (err) {
-      // Continue — onWhatsApp may timeout for some numbers
+    } catch (err: any) {
+      console.log(`[Baileys] onWhatsApp check error (continuing): ${err?.message}`);
     }
 
-    // Attempt to send with retry
-    const maxRetries = 2;
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        // Re-fetch socket in case it reconnected
-        sock = this.sockets.get(sessionId);
-        if (!sock) {
-          await this.startSession(sessionId);
-          sock = this.sockets.get(sessionId);
-        }
-        if (!sock) {
-          return {
-            success: false,
-            status: 'FAILED',
-            error: 'Socket disconnected during send.',
-            timestamp: new Date(),
-          };
-        }
+    // Send the message
+    try {
+      const res = await sock.sendMessage(targetJid, { text });
+      const messageId = res?.key?.id || '';
+      console.log(`[Baileys] sendMessage result for ${cleanedDigits}: messageId=${messageId}, status=${res?.status}`);
 
-        const res = await sock.sendMessage(targetJid, { text });
-        const messageId = res?.key?.id || `baileys_${Date.now()}`;
-
-        // Wait for socket write buffer to flush to WhatsApp servers
-        await new Promise((r) => setTimeout(r, 1500));
-
-        return {
-          success: true,
-          providerMessageId: messageId,
-          status: 'SENT',
-          timestamp: new Date(),
-        };
-      } catch (error: any) {
-        const errMsg = error?.message || '';
-        // If it's a retryable error (connection reset, timeout), retry after delay
-        if (attempt < maxRetries && (errMsg.includes('timed out') || errMsg.includes('connection') || errMsg.includes('ECONNRESET'))) {
-          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
-          continue;
-        }
+      if (!messageId) {
         return {
           success: false,
           status: 'FAILED',
-          error: errMsg || 'Failed to send message via WhatsApp gateway',
+          error: 'No message ID returned — message was not accepted by WhatsApp.',
           timestamp: new Date(),
         };
       }
-    }
 
-    return {
-      success: false,
-      status: 'FAILED',
-      error: 'Max retries exceeded.',
-      timestamp: new Date(),
-    };
+      // Critical: wait for the encrypted message frame to fully transmit
+      await new Promise((r) => setTimeout(r, 2000));
+
+      return {
+        success: true,
+        providerMessageId: messageId,
+        status: 'SENT',
+        timestamp: new Date(),
+      };
+    } catch (error: any) {
+      console.error(`[Baileys] sendMessage FAILED for ${cleanedDigits}:`, error?.message);
+      return {
+        success: false,
+        status: 'FAILED',
+        error: error?.message || 'Failed to send message',
+        timestamp: new Date(),
+      };
+    }
   }
 
   async sendMedia(params: SendMediaParams): Promise<SendMessageResult> {
@@ -287,6 +288,8 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
       const res = await sock.sendMessage(jid, content);
       const messageId = res?.key?.id || `baileys_media_${Date.now()}`;
+
+      await new Promise((r) => setTimeout(r, 2000));
 
       return {
         success: true,
