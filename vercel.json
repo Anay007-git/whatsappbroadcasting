@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm install && npm --workspace=packages/types run build && npm --workspace=packages/shared run build && npm --workspace=packages/validation run build && cd apps/web && npm run build",
+  "buildCommand": "cd packages/types && npx tsc && cd ../shared && npx tsc && cd ../validation && npx tsc && cd ../../apps/web && npx next build",
   "outputDirectory": "apps/web/.next",
   "installCommand": "npm install",
   "framework": null
