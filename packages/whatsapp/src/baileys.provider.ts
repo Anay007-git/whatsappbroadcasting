@@ -182,50 +182,77 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       };
     }
 
-    try {
-      const targetJid = this.formatJid(to);
-      const cleanedDigits = targetJid.split('@')[0];
+    const targetJid = this.formatJid(to);
+    const cleanedDigits = targetJid.split('@')[0];
 
-      // Check if user is registered on WhatsApp
+    // Verify the number is registered on WhatsApp
+    try {
+      const check = await sock.onWhatsApp(cleanedDigits);
+      if (check && check.length > 0 && !check[0]?.exists) {
+        return {
+          success: false,
+          status: 'FAILED',
+          error: `Phone number +${cleanedDigits} is not registered on WhatsApp.`,
+          timestamp: new Date(),
+        };
+      }
+    } catch (err) {
+      // Continue — onWhatsApp may timeout for some numbers
+    }
+
+    // Attempt to send with retry
+    const maxRetries = 2;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        const check = await sock.onWhatsApp(cleanedDigits);
-        if (check && check.length > 0 && !check[0]?.exists) {
+        // Re-fetch socket in case it reconnected
+        sock = this.sockets.get(sessionId);
+        if (!sock) {
+          await this.startSession(sessionId);
+          sock = this.sockets.get(sessionId);
+        }
+        if (!sock) {
           return {
             success: false,
             status: 'FAILED',
-            error: `Phone number +${cleanedDigits} is not registered on WhatsApp.`,
+            error: 'Socket disconnected during send.',
             timestamp: new Date(),
           };
         }
-      } catch (err) {
-        // Continue if check timeout
+
+        const res = await sock.sendMessage(targetJid, { text });
+        const messageId = res?.key?.id || `baileys_${Date.now()}`;
+
+        // Wait for socket write buffer to flush to WhatsApp servers
+        await new Promise((r) => setTimeout(r, 1500));
+
+        return {
+          success: true,
+          providerMessageId: messageId,
+          status: 'SENT',
+          timestamp: new Date(),
+        };
+      } catch (error: any) {
+        const errMsg = error?.message || '';
+        // If it's a retryable error (connection reset, timeout), retry after delay
+        if (attempt < maxRetries && (errMsg.includes('timed out') || errMsg.includes('connection') || errMsg.includes('ECONNRESET'))) {
+          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        return {
+          success: false,
+          status: 'FAILED',
+          error: errMsg || 'Failed to send message via WhatsApp gateway',
+          timestamp: new Date(),
+        };
       }
-
-      // Send presence composing to establish encryption handshake
-      try {
-        await sock.sendPresenceUpdate('composing', targetJid);
-      } catch (e) {}
-
-      const res = await sock.sendMessage(targetJid, { text });
-      const messageId = res?.key?.id || `baileys_${Date.now()}`;
-
-      // Brief pause to allow socket frame flush
-      await new Promise((r) => setTimeout(r, 400));
-
-      return {
-        success: true,
-        providerMessageId: messageId,
-        status: 'SENT',
-        timestamp: new Date(),
-      };
-    } catch (error: any) {
-      return {
-        success: false,
-        status: 'FAILED',
-        error: error?.message || 'Failed to send message via WhatsApp gateway',
-        timestamp: new Date(),
-      };
     }
+
+    return {
+      success: false,
+      status: 'FAILED',
+      error: 'Max retries exceeded.',
+      timestamp: new Date(),
+    };
   }
 
   async sendMedia(params: SendMediaParams): Promise<SendMessageResult> {

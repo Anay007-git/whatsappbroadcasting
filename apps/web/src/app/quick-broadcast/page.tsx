@@ -24,7 +24,7 @@ export default function QuickBroadcastPage() {
   const [message, setMessage] = useState(
     'Hello {{name}}! 👋\n\nYou are invited to our exclusive annual launch event!\n\n📍 Venue: Grand Convention Center\n🗓 Date: Upcoming Weekend\n\nPlease reply "YES" to confirm your attendance.',
   );
-  const [delayMs, setDelayMs] = useState(2500);
+  const [delayMs, setDelayMs] = useState(4000);
   const [fileName, setFileName] = useState<string | null>(null);
   const [broadcasting, setBroadcasting] = useState(false);
   const [currentProgress, setCurrentProgress] = useState(0);
