@@ -178,21 +178,34 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
 
     try {
       const cleaned = to.replace(/[^\d]/g, '');
-      const jid = `${cleaned}@s.whatsapp.net`;
+      let targetJid = `${cleaned}@s.whatsapp.net`;
 
       try {
         const check = await sock.onWhatsApp(cleaned);
-        if (check && check.length > 0 && !check[0]?.exists) {
-          return {
-            success: false,
-            status: 'FAILED',
-            error: `Number +${cleaned} is not registered on WhatsApp`,
-            timestamp: new Date(),
-          };
+        if (check && check.length > 0) {
+          if (!check[0]?.exists) {
+            return {
+              success: false,
+              status: 'FAILED',
+              error: `Number +${cleaned} is not registered on WhatsApp`,
+              timestamp: new Date(),
+            };
+          }
+          if (check[0]?.jid) {
+            targetJid = check[0].jid;
+          }
         }
       } catch (err) {}
 
-      const res = await sock.sendMessage(jid, { text });
+      // Establish Signal protocol session keys for new contacts
+      try {
+        await sock.presenceSubscribe(targetJid);
+        await sock.sendPresenceUpdate('composing', targetJid);
+        await new Promise((r) => setTimeout(r, 600));
+        await sock.sendPresenceUpdate('paused', targetJid);
+      } catch (e) {}
+
+      const res = await sock.sendMessage(targetJid, { text });
       const messageId = res?.key?.id || `baileys_${Date.now()}`;
 
       return {

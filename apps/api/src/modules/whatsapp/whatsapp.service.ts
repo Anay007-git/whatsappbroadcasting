@@ -233,20 +233,27 @@ export class WhatsAppService {
     const providerInstance = this.getProviderInstance(session.provider);
     const normalizedTo = normalizePhoneNumber(phoneNumber);
 
+    let result;
     if (mediaUrl && mediaType) {
-      return providerInstance.sendMedia({
+      result = await providerInstance.sendMedia({
         sessionId: session.providerSessionId,
         to: normalizedTo,
         mediaUrl,
         mediaType: mediaType as any,
         caption: messageContent,
       });
+    } else {
+      result = await providerInstance.sendText({
+        sessionId: session.providerSessionId,
+        to: normalizedTo,
+        text: messageContent,
+      });
     }
 
-    return providerInstance.sendText({
-      sessionId: session.providerSessionId,
-      to: normalizedTo,
-      text: messageContent,
-    });
+    if (!result.success) {
+      throw new BadRequestException(result.error || 'WhatsApp message rejected by gateway');
+    }
+
+    return result;
   }
 }
