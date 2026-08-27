@@ -158,6 +158,17 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     return this.sessionState.get(sessionId)?.qrCode || null;
   }
 
+  private formatJid(phone: string): string {
+    let cleaned = phone.replace(/[^\d]/g, '');
+    if (cleaned.startsWith('0')) {
+      cleaned = cleaned.substring(1);
+    }
+    if (cleaned.length === 10) {
+      cleaned = `91${cleaned}`;
+    }
+    return `${cleaned}@s.whatsapp.net`;
+  }
+
   async sendText(params: SendTextParams): Promise<SendMessageResult> {
     const { sessionId, to, text } = params;
     let sock = this.sockets.get(sessionId);
@@ -171,42 +182,40 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       return {
         success: false,
         status: 'FAILED',
-        error: 'WhatsApp socket connection is not ready.',
+        error: 'WhatsApp socket connection is not ready. Please pair QR code first.',
         timestamp: new Date(),
       };
     }
 
     try {
-      const cleaned = to.replace(/[^\d]/g, '');
-      let targetJid = `${cleaned}@s.whatsapp.net`;
+      const targetJid = this.formatJid(to);
+      const cleanedDigits = targetJid.split('@')[0];
 
+      // Check if user is registered on WhatsApp
       try {
-        const check = await sock.onWhatsApp(cleaned);
-        if (check && check.length > 0) {
-          if (!check[0]?.exists) {
-            return {
-              success: false,
-              status: 'FAILED',
-              error: `Number +${cleaned} is not registered on WhatsApp`,
-              timestamp: new Date(),
-            };
-          }
-          if (check[0]?.jid) {
-            targetJid = check[0].jid;
-          }
+        const check = await sock.onWhatsApp(cleanedDigits);
+        if (check && check.length > 0 && !check[0]?.exists) {
+          return {
+            success: false,
+            status: 'FAILED',
+            error: `Phone number +${cleanedDigits} is not registered on WhatsApp.`,
+            timestamp: new Date(),
+          };
         }
-      } catch (err) {}
+      } catch (err) {
+        // Continue if check timeout
+      }
 
-      // Establish Signal protocol session keys for new contacts
+      // Send presence composing to establish encryption handshake
       try {
-        await sock.presenceSubscribe(targetJid);
         await sock.sendPresenceUpdate('composing', targetJid);
-        await new Promise((r) => setTimeout(r, 600));
-        await sock.sendPresenceUpdate('paused', targetJid);
       } catch (e) {}
 
       const res = await sock.sendMessage(targetJid, { text });
       const messageId = res?.key?.id || `baileys_${Date.now()}`;
+
+      // Brief pause to allow socket frame flush
+      await new Promise((r) => setTimeout(r, 400));
 
       return {
         success: true,
@@ -218,7 +227,7 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
       return {
         success: false,
         status: 'FAILED',
-        error: error?.message || 'Failed to send message via Baileys',
+        error: error?.message || 'Failed to send message via WhatsApp gateway',
         timestamp: new Date(),
       };
     }
