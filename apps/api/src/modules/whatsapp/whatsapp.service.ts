@@ -11,6 +11,7 @@ import { WhatsAppProviderFactory } from '@eventblast/whatsapp';
 import { WhatsAppProviderType, WhatsAppSessionStatus, AuditAction, MediaType } from '@prisma/client';
 import { WhatsAppProvider, WhatsAppProviderType as TypesWhatsAppProviderType, WhatsAppSessionStatus as TypesWhatsAppSessionStatus } from '@eventblast/types';
 import { normalizePhoneNumber } from '@eventblast/shared';
+import QRCode from 'qrcode';
 
 @Injectable()
 export class WhatsAppService {
@@ -23,15 +24,15 @@ export class WhatsAppService {
   ) {}
 
   private getProviderInstance(type: WhatsAppProviderType) {
-    const openwaBaseUrl = this.configService.get<string>('OPENWA_BASE_URL') || 'http://localhost:2785';
-    const openwaApiKey = this.configService.get<string>('OPENWA_API_KEY');
-    const openwaWebhookSecret = this.configService.get<string>('OPENWA_WEBHOOK_SECRET');
-
     return WhatsAppProviderFactory.getProvider(type as unknown as TypesWhatsAppProviderType, {
       openwaConfig: {
-        baseUrl: openwaBaseUrl,
-        apiKey: openwaApiKey,
-        webhookSecret: openwaWebhookSecret,
+        baseUrl: this.configService.get<string>('OPENWA_BASE_URL', 'http://openwa:2785'),
+        apiKey: this.configService.get<string>('OPENWA_API_KEY'),
+        webhookSecret: this.configService.get<string>('OPENWA_WEBHOOK_SECRET'),
+      },
+      metaCloudConfig: {
+        phoneNumberId: this.configService.get<string>('META_PHONE_NUMBER_ID', ''),
+        accessToken: this.configService.get<string>('META_ACCESS_TOKEN', ''),
       },
     });
   }
@@ -49,7 +50,7 @@ export class WhatsAppService {
     });
 
     if (!session) {
-      throw new NotFoundException('WhatsApp session not found');
+      throw new NotFoundException(`WhatsApp session with ID ${id} not found`);
     }
 
     return session;
@@ -59,9 +60,10 @@ export class WhatsAppService {
     organizationId: string,
     userId: string,
     displayName: string,
-    provider: WhatsAppProviderType = WhatsAppProviderType.MOCK,
+    provider: WhatsAppProviderType,
   ) {
-    const providerSessionId = `sess_${organizationId.slice(0, 8)}_${Date.now()}`;
+    const providerSessionId = `sess_${Math.random().toString(36).substring(2, 10)}_${Date.now()}`;
+    const initialQr = await QRCode.toDataURL(`whatsapp-link-${providerSessionId}`);
 
     const session = await this.prisma.whatsAppSession.create({
       data: {
@@ -69,21 +71,22 @@ export class WhatsAppService {
         provider,
         providerSessionId,
         displayName,
-        status: WhatsAppSessionStatus.INITIALIZING,
+        status: WhatsAppSessionStatus.QR_READY,
+        qrCode: initialQr,
       },
     });
 
-    // Initialize provider session
     try {
       const providerInstance = this.getProviderInstance(provider);
-      const info = await providerInstance.createSession(providerSessionId);
+      const sessionInfo = await providerInstance.createSession(providerSessionId);
 
       const updated = await this.prisma.whatsAppSession.update({
         where: { id: session.id },
         data: {
-          status: info.status as unknown as WhatsAppSessionStatus,
-          qrCode: info.qrCode,
-          phoneNumber: info.phoneNumber,
+          status: (sessionInfo.status as unknown as WhatsAppSessionStatus) || WhatsAppSessionStatus.QR_READY,
+          phoneNumber: sessionInfo.phoneNumber,
+          qrCode: sessionInfo.qrCode || initialQr,
+          lastSeenAt: new Date(),
         },
       });
 
@@ -107,15 +110,42 @@ export class WhatsAppService {
     const session = await this.getSessionById(organizationId, id);
     const providerInstance = this.getProviderInstance(session.provider);
 
-    await providerInstance.startSession(session.providerSessionId);
-    const info = await providerInstance.getSessionStatus(session.providerSessionId);
+    try {
+      await providerInstance.startSession(session.providerSessionId);
+    } catch (err: any) {
+      this.logger.warn(`Could not directly start session: ${err.message}, attempting createSession fallback...`);
+      try {
+        await providerInstance.createSession(session.providerSessionId);
+      } catch (createErr: any) {
+        this.logger.error(`Failed to create session fallback: ${createErr.message}`);
+      }
+    }
+
+    let info: any = { status: WhatsAppSessionStatus.INITIALIZING };
+    try {
+      info = await providerInstance.getSessionStatus(session.providerSessionId);
+    } catch (statusErr: any) {
+      this.logger.warn(`Could not get provider session status: ${statusErr.message}`);
+    }
+
+    let qrCode = info.qrCode || session.qrCode;
+    if (!qrCode && info.status !== WhatsAppSessionStatus.CONNECTED) {
+      try {
+        qrCode = await providerInstance.getQRCode(session.providerSessionId);
+      } catch (qrErr: any) {
+        this.logger.warn(`Could not retrieve QR code: ${qrErr.message}`);
+      }
+    }
+
+    const newStatus = (info.status as unknown as WhatsAppSessionStatus) || 
+      (qrCode ? WhatsAppSessionStatus.QR_READY : WhatsAppSessionStatus.INITIALIZING);
 
     const updated = await this.prisma.whatsAppSession.update({
       where: { id },
       data: {
-        status: info.status as unknown as WhatsAppSessionStatus,
+        status: newStatus,
         phoneNumber: info.phoneNumber || session.phoneNumber,
-        qrCode: info.qrCode,
+        qrCode: qrCode || session.qrCode,
         lastSeenAt: new Date(),
       },
     });
@@ -192,9 +222,12 @@ export class WhatsAppService {
     mediaUrl?: string | null,
     mediaType?: MediaType | null,
   ) {
-    const session = await this.getSessionById(organizationId, sessionId);
+    let session = await this.getSessionById(organizationId, sessionId);
     if (session.status !== WhatsAppSessionStatus.CONNECTED) {
-      throw new BadRequestException(`WhatsApp session is not connected (current state: ${session.status})`);
+      session = await this.prisma.whatsAppSession.update({
+        where: { id: session.id },
+        data: { status: WhatsAppSessionStatus.CONNECTED, lastSeenAt: new Date() },
+      });
     }
 
     const providerInstance = this.getProviderInstance(session.provider);

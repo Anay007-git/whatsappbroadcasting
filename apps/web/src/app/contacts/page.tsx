@@ -20,6 +20,9 @@ import {
   Mail,
   X,
   Calendar,
+  Trash2,
+  Tag,
+  Check,
 } from 'lucide-react';
 
 export default function ContactsPage() {
@@ -67,6 +70,28 @@ export default function ContactsPage() {
     },
   });
 
+  const deleteContactMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/contacts/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      setSelectedContactDetail(null);
+    },
+    onError: (err: any) => {
+      alert(`Could not delete contact: ${err.message}`);
+    },
+  });
+
+  const updateContactGroupsMutation = useMutation({
+    mutationFn: ({ id, groupIds }: { id: string; groupIds: string[] }) =>
+      api.patch(`/contacts/${id}`, { groupIds }),
+    onSuccess: (updated: any) => {
+      queryClient.invalidateQueries({ queryKey: ['contacts'] });
+      if (selectedContactDetail && selectedContactDetail.id === updated.id) {
+        setSelectedContactDetail(updated);
+      }
+    },
+  });
+
   const resetForm = () => {
     setFirstName('');
     setLastName('');
@@ -92,6 +117,12 @@ export default function ContactsPage() {
     });
   };
 
+  const handleDelete = (id: string, name: string) => {
+    if (window.confirm(`Are you sure you want to permanently delete "${name}"?`)) {
+      deleteContactMutation.mutate(id);
+    }
+  };
+
   const contacts = contactsData?.items || [];
 
   return (
@@ -102,66 +133,59 @@ export default function ContactsPage() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
               <Users className="w-6 h-6 text-indigo-400" />
-              <span>Contact Directory</span>
+              <span>Contacts Directory</span>
             </h1>
             <p className="text-sm text-slate-400 mt-1">
-              Manage opted-in contacts, audience segments, and VIP guests
+              Manage your address book, organize custom groups, and inspect opt-in telemetry
             </p>
           </div>
 
           <div className="flex items-center gap-3">
-            <a
-              href="/api/contacts/export/csv"
-              target="_blank"
-              rel="noreferrer"
-              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>Export CSV</span>
-            </a>
-
             <Link
               href="/contacts/import"
-              className="px-3.5 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-400 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all"
+              className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center gap-2 transition-all"
             >
-              <Upload className="w-3.5 h-3.5" />
-              <span>Import Excel/CSV</span>
+              <Upload className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Import Excel / CSV</span>
             </Link>
 
             <button
               onClick={() => setAddModalOpen(true)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/25 flex items-center gap-2 transition-all"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/20 flex items-center gap-2 transition-all"
             >
-              <Plus className="w-3.5 h-3.5" />
+              <Plus className="w-4 h-4" />
               <span>Add Contact</span>
             </button>
           </div>
         </div>
 
-        {/* Filters and Search Bar */}
-        <div className="glass-panel p-4 rounded-2xl border border-slate-800/80 flex flex-col sm:flex-row gap-3 items-center justify-between">
-          <div className="relative flex-1 w-full">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+        {/* Filter Controls */}
+        <div className="glass-panel p-4 rounded-2xl border border-slate-800 flex flex-col md:flex-row gap-3 items-center justify-between">
+          <div className="relative w-full md:w-80">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Search by name, phone (+91...), email, company..."
+              placeholder="Search by name, phone or company..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              className="w-full pl-9 pr-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500"
             />
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <Filter className="w-4 h-4 text-slate-400" />
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <div className="flex items-center gap-2 text-xs text-slate-400">
+              <FolderTree className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Filter Group:</span>
+            </div>
             <select
               value={selectedGroup}
               onChange={(e) => setSelectedGroup(e.target.value)}
-              className="px-3 py-2 bg-slate-900/80 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500 w-full sm:w-auto"
+              className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
             >
-              <option value="">All Groups / Segments</option>
+              <option value="">All Groups (No Filter)</option>
               {groups.map((g: any) => (
                 <option key={g.id} value={g.id}>
-                  {g.name} ({g.contactCount || 0})
+                  {g.name} ({g._count?.members || 0})
                 </option>
               ))}
             </select>
@@ -169,16 +193,16 @@ export default function ContactsPage() {
         </div>
 
         {/* Contacts Table */}
-        <div className="glass-panel rounded-2xl border border-slate-800/80 overflow-hidden">
+        <div className="glass-panel rounded-2xl border border-slate-800 overflow-hidden shadow-xl">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-900/60 text-slate-400 uppercase font-semibold border-b border-slate-800">
+              <thead className="bg-slate-950/80 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
                 <tr>
                   <th className="px-6 py-3.5">Name</th>
-                  <th className="px-6 py-3.5">Phone Number (E.164)</th>
-                  <th className="px-6 py-3.5">Company / Role</th>
-                  <th className="px-6 py-3.5">Groups</th>
-                  <th className="px-6 py-3.5">Opt-In Status</th>
+                  <th className="px-6 py-3.5">Phone Number</th>
+                  <th className="px-6 py-3.5">Company</th>
+                  <th className="px-6 py-3.5">Assigned Groups</th>
+                  <th className="px-6 py-3.5">Status</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
@@ -186,17 +210,19 @@ export default function ContactsPage() {
                 {contacts.map((c: any) => (
                   <tr
                     key={c.id}
+                    className="hover:bg-slate-800/30 transition-colors cursor-pointer"
                     onClick={() => setSelectedContactDetail(c)}
-                    className="hover:bg-slate-900/40 cursor-pointer transition-colors"
                   >
                     <td className="px-6 py-4">
-                      <div className="font-semibold text-white">{c.fullName}</div>
-                      <div className="text-[11px] text-slate-400">{c.email || '—'}</div>
+                      <div className="font-semibold text-slate-100">{c.fullName}</div>
+                      {c.email && <div className="text-[11px] text-slate-500">{c.email}</div>}
                     </td>
-                    <td className="px-6 py-4 font-mono text-slate-300">{c.phoneNumber}</td>
+                    <td className="px-6 py-4 font-mono font-medium text-slate-300">
+                      {c.phoneNumber}
+                    </td>
                     <td className="px-6 py-4">
-                      <div className="text-slate-200 font-medium">{c.company || '—'}</div>
-                      <div className="text-[11px] text-slate-400">{c.designation || '—'}</div>
+                      <div>{c.company || '—'}</div>
+                      {c.designation && <div className="text-[11px] text-slate-500">{c.designation}</div>}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-wrap gap-1">
@@ -204,7 +230,7 @@ export default function ContactsPage() {
                           c.groups.map((g: any) => (
                             <span
                               key={g.id}
-                              className="px-2 py-0.5 rounded-md bg-slate-800 border border-slate-700 text-[10px] text-indigo-300 font-medium"
+                              className="px-2 py-0.5 rounded-md bg-indigo-500/10 border border-indigo-500/30 text-[10px] text-indigo-300 font-medium"
                             >
                               {g.name}
                             </span>
@@ -228,15 +254,21 @@ export default function ContactsPage() {
                       )}
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedContactDetail(c);
-                        }}
-                        className="text-indigo-400 hover:text-indigo-300 font-semibold"
-                      >
-                        Profile →
-                      </button>
+                      <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          onClick={() => setSelectedContactDetail(c)}
+                          className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-indigo-300 rounded-lg text-xs font-semibold"
+                        >
+                          Profile
+                        </button>
+                        <button
+                          onClick={() => handleDelete(c.id, c.fullName)}
+                          className="p-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg transition-colors"
+                          title="Delete Contact"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -244,7 +276,7 @@ export default function ContactsPage() {
                 {contacts.length === 0 && (
                   <tr>
                     <td colSpan={6} className="px-6 py-12 text-center text-slate-500">
-                      No contacts found matching criteria.
+                      No contacts found. Click &quot;Add Contact&quot; or &quot;Import Excel / CSV&quot; above.
                     </td>
                   </tr>
                 )}
@@ -310,7 +342,7 @@ export default function ContactsPage() {
                     required
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="+919876543210"
+                    placeholder="+919804239301"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100 font-mono"
                   />
                 </div>
@@ -322,7 +354,7 @@ export default function ContactsPage() {
                       type="text"
                       value={company}
                       onChange={(e) => setCompany(e.target.value)}
-                      placeholder="Lux Industries"
+                      placeholder="Company Name"
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100"
                     />
                   </div>
@@ -332,7 +364,7 @@ export default function ContactsPage() {
                       type="text"
                       value={designation}
                       onChange={(e) => setDesignation(e.target.value)}
-                      placeholder="Managing Director"
+                      placeholder="Director"
                       className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100"
                     />
                   </div>
@@ -344,7 +376,7 @@ export default function ContactsPage() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder="rahul@company.com"
+                    placeholder="user@example.com"
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-100"
                   />
                 </div>
@@ -402,7 +434,7 @@ export default function ContactsPage() {
           </div>
         )}
 
-        {/* Contact Profile Detail Drawer */}
+        {/* Contact Profile Detail & Group Manager Drawer */}
         {selectedContactDetail && (
           <div className="fixed inset-0 z-50 flex items-center justify-end bg-black/60 backdrop-blur-sm p-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full h-[90vh] p-6 shadow-2xl flex flex-col justify-between overflow-y-auto relative">
@@ -417,14 +449,24 @@ export default function ContactsPage() {
                   </button>
                 </div>
 
-                <div className="mt-4 flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-full bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 font-bold text-lg">
-                    {selectedContactDetail.firstName?.slice(0, 1) || 'C'}
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 font-bold text-lg">
+                      {selectedContactDetail.firstName?.slice(0, 1) || 'C'}
+                    </div>
+                    <div>
+                      <div className="text-base font-bold text-white">{selectedContactDetail.fullName}</div>
+                      <div className="text-xs text-slate-400">{selectedContactDetail.company || 'Private Contact'}</div>
+                    </div>
                   </div>
-                  <div>
-                    <div className="text-base font-bold text-white">{selectedContactDetail.fullName}</div>
-                    <div className="text-xs text-slate-400">{selectedContactDetail.company || 'Private Contact'}</div>
-                  </div>
+
+                  <button
+                    onClick={() => handleDelete(selectedContactDetail.id, selectedContactDetail.fullName)}
+                    className="px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete</span>
+                  </button>
                 </div>
 
                 <div className="mt-6 space-y-3 text-xs">
@@ -448,25 +490,53 @@ export default function ContactsPage() {
                     <Building className="w-4 h-4 text-purple-400 shrink-0" />
                     <div>
                       <div className="text-slate-400 text-[10px]">Company & Role</div>
-                      <div className="text-slate-200">{selectedContactDetail.company} ({selectedContactDetail.designation || 'Staff'})</div>
+                      <div className="text-slate-200">{selectedContactDetail.company || '—'} ({selectedContactDetail.designation || 'Staff'})</div>
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-6">
-                  <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">Assigned Groups</h3>
-                  <div className="flex flex-wrap gap-1.5">
-                    {selectedContactDetail.groups && selectedContactDetail.groups.length > 0 ? (
-                      selectedContactDetail.groups.map((g: any) => (
-                        <span
-                          key={g.id}
-                          className="px-2.5 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium text-xs border border-slate-700"
-                        >
-                          {g.name}
-                        </span>
-                      ))
+                {/* Manage Groups Assignment */}
+                <div className="mt-6 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Tag className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>Assign Groups (Click to Toggle)</span>
+                    </h3>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 p-3 bg-slate-950 rounded-xl border border-slate-800">
+                    {groups.length === 0 ? (
+                      <span className="text-slate-500 text-xs">No groups created yet. Create a group first under Groups tab.</span>
                     ) : (
-                      <span className="text-slate-500 text-xs">No groups assigned</span>
+                      groups.map((g: any) => {
+                        const currentGroupIds = selectedContactDetail.groups?.map((gr: any) => gr.id) || [];
+                        const isAssigned = currentGroupIds.includes(g.id);
+
+                        return (
+                          <button
+                            key={g.id}
+                            type="button"
+                            onClick={() => {
+                              const newGroupIds = isAssigned
+                                ? currentGroupIds.filter((gid: string) => gid !== g.id)
+                                : [...currentGroupIds, g.id];
+
+                              updateContactGroupsMutation.mutate({
+                                id: selectedContactDetail.id,
+                                groupIds: newGroupIds,
+                              });
+                            }}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border flex items-center gap-1.5 transition-all ${
+                              isAssigned
+                                ? 'bg-indigo-600 text-white border-indigo-500 shadow-md shadow-indigo-600/20'
+                                : 'bg-slate-900 text-slate-400 border-slate-800 hover:border-slate-700 hover:text-slate-200'
+                            }`}
+                          >
+                            {isAssigned && <Check className="w-3.5 h-3.5" />}
+                            <span>{g.name}</span>
+                          </button>
+                        );
+                      })
                     )}
                   </div>
                 </div>
@@ -475,7 +545,7 @@ export default function ContactsPage() {
               <div className="pt-4 border-t border-slate-800">
                 <button
                   onClick={() => setSelectedContactDetail(null)}
-                  className="w-full py-2 bg-slate-800 text-xs font-semibold rounded-lg text-slate-300"
+                  className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg text-slate-300 transition-colors"
                 >
                   Close Profile
                 </button>

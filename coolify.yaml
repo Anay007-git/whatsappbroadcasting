@@ -1,0 +1,90 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: eventblast-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eventblast}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eventblast_secret_prod_key_2026}
+      POSTGRES_DB: ${POSTGRES_DB:-eventblast_db}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eventblast} -d ${POSTGRES_DB:-eventblast_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eventblast-internal
+
+  redis:
+    image: redis:7-alpine
+    container_name: eventblast-redis
+    restart: always
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - eventblast-internal
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: eventblast-api
+    restart: always
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-eventblast}:${POSTGRES_PASSWORD:-eventblast_secret_prod_key_2026}@postgres:5432/${POSTGRES_DB:-eventblast_db}?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-super_secure_64_char_production_jwt_secret_eventblast_2026!}
+      WHATSAPP_PROVIDER: openwa
+      APP_URL: ${APP_URL:-https://eventblast.vercel.app}
+    volumes:
+      - baileys_auth:/app/.baileys_auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - eventblast-internal
+
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.worker
+    container_name: eventblast-worker
+    restart: always
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-eventblast}:${POSTGRES_PASSWORD:-eventblast_secret_prod_key_2026}@postgres:5432/${POSTGRES_DB:-eventblast_db}?schema=public
+      REDIS_URL: redis://redis:6379
+      WHATSAPP_PROVIDER: openwa
+      MESSAGE_MIN_DELAY_MS: 1500
+    volumes:
+      - baileys_auth:/app/.baileys_auth
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - eventblast-internal
+
+volumes:
+  postgres_data:
+  redis_data:
+  baileys_auth:
+
+networks:
+  eventblast-internal:
+    driver: bridge

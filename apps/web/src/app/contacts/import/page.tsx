@@ -172,16 +172,28 @@ export default function ImportContactsPage() {
               </p>
             </div>
 
-            <label className="cursor-pointer px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/25 transition-all">
-              <span>{uploading ? 'Reading File...' : 'Select File from Device'}</span>
-              <input
-                type="file"
-                accept=".csv, .xlsx, .xls"
-                onChange={handleFileUpload}
-                className="hidden"
-                disabled={uploading}
-              />
-            </label>
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+              <label className="cursor-pointer px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/25 transition-all flex items-center gap-2">
+                <Upload className="w-4 h-4" />
+                <span>{uploading ? 'Reading File...' : 'Select File from Device'}</span>
+                <input
+                  type="file"
+                  accept=".csv, .xlsx, .xls"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  disabled={uploading}
+                />
+              </label>
+
+              <a
+                href="/sample-contacts-import.csv"
+                download="sample-contacts-import.csv"
+                className="px-5 py-2.5 bg-slate-800/90 hover:bg-slate-700/90 border border-slate-700/80 text-slate-200 rounded-xl text-xs font-semibold transition-all flex items-center gap-2"
+              >
+                <Download className="w-4 h-4 text-emerald-400" />
+                <span>Download Sample CSV Template</span>
+              </a>
+            </div>
           </div>
         )}
 

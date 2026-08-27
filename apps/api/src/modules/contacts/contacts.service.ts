@@ -11,6 +11,7 @@ import { AuditAction } from '@prisma/client';
 import { normalizePhoneNumber, isValidPhoneNumber } from '@eventblast/shared';
 import { CreateContactSchema, UpdateContactSchema } from '@eventblast/validation';
 import { z } from 'zod';
+import * as XLSX from 'xlsx';
 
 export interface ListContactsQuery {
   page?: number;
@@ -348,5 +349,178 @@ export class ContactsService {
       .join('\n');
 
     return headers + rows;
+  }
+
+  async previewImport(fileBuffer: Buffer) {
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const firstSheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[firstSheetName];
+    const rawRows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+    if (rawRows.length === 0) {
+      throw new BadRequestException('Uploaded spreadsheet is empty.');
+    }
+
+    const headers = Object.keys(rawRows[0]);
+    const suggestedMapping: Record<string, string> = {};
+
+    headers.forEach((h) => {
+      const lower = h.toLowerCase();
+      if (lower.includes('phone') || lower.includes('mobile') || lower.includes('cell') || lower.includes('whatsapp') || lower.includes('contact')) {
+        suggestedMapping.phoneNumber = h;
+      } else if (lower.includes('full') && lower.includes('name')) {
+        suggestedMapping.fullName = h;
+      } else if (lower.includes('first') || lower === 'name') {
+        suggestedMapping.firstName = h;
+      } else if (lower.includes('last') || lower.includes('surname')) {
+        suggestedMapping.lastName = h;
+      } else if (lower.includes('mail')) {
+        suggestedMapping.email = h;
+      } else if (lower.includes('comp') || lower.includes('org')) {
+        suggestedMapping.company = h;
+      } else if (lower.includes('desig') || lower.includes('title') || lower.includes('role')) {
+        suggestedMapping.designation = h;
+      }
+    });
+
+    const previewRows = rawRows.slice(0, 10).map((r) => {
+      const cleanedPhone = this.cleanPhoneNumberString(r[suggestedMapping.phoneNumber || 'phoneNumber'] || r.phone || r.Mobile || '');
+      return {
+        ...r,
+        phoneNumber: cleanedPhone,
+      };
+    });
+
+    return {
+      headers,
+      suggestedMapping,
+      previewRows,
+      totalRows: rawRows.length,
+    };
+  }
+
+  async processImport(
+    organizationId: string,
+    userId: string,
+    fileBuffer: Buffer,
+    options: {
+      columnMapping: Record<string, string>;
+      defaultGroupId?: string;
+      marketingOptIn?: boolean;
+      optInSource?: string;
+    },
+  ) {
+    const workbook = XLSX.read(fileBuffer, { type: 'buffer' });
+    const firstSheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[firstSheetName];
+    const rawRows: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+    const mapping = options.columnMapping || {};
+    let importedCount = 0;
+    let skippedCount = 0;
+    const errors: string[] = [];
+
+    for (let i = 0; i < rawRows.length; i++) {
+      const row = rawRows[i];
+      const rawPhone = row[mapping.phoneNumber] || row.phoneNumber || row.phone || row.Mobile || '';
+      const normalizedPhone = this.cleanPhoneNumberString(rawPhone);
+
+      if (!normalizedPhone || normalizedPhone.length < 8) {
+        skippedCount++;
+        errors.push(`Row ${i + 1}: Invalid phone number "${rawPhone}"`);
+        continue;
+      }
+
+      const firstName = String(row[mapping.firstName] || row.firstName || row.name || 'Friend').trim();
+      const lastName = String(row[mapping.lastName] || row.lastName || '').trim();
+      const fullName = String(row[mapping.fullName] || (lastName ? `${firstName} ${lastName}` : firstName)).trim();
+      const email = String(row[mapping.email] || row.email || '').trim() || null;
+      const company = String(row[mapping.company] || row.company || '').trim() || null;
+      const designation = String(row[mapping.designation] || row.designation || '').trim() || null;
+
+      try {
+        const contact = await this.prisma.contact.upsert({
+          where: {
+            organizationId_phoneNumber: {
+              organizationId,
+              phoneNumber: normalizedPhone,
+            },
+          },
+          update: {
+            firstName,
+            lastName,
+            fullName,
+            email,
+            company,
+            designation,
+          },
+          create: {
+            organizationId,
+            firstName,
+            lastName,
+            fullName,
+            phoneNumber: normalizedPhone,
+            email,
+            company,
+            designation,
+            source: 'EXCEL_IMPORT',
+            marketingOptIn: options.marketingOptIn ?? true,
+            optInSource: options.optInSource || 'EXCEL_IMPORT',
+            optInAt: new Date(),
+          },
+        });
+
+        if (options.defaultGroupId) {
+          await this.prisma.contactGroupMember.upsert({
+            where: {
+              groupId_contactId: {
+                groupId: options.defaultGroupId,
+                contactId: contact.id,
+              },
+            },
+            update: {},
+            create: {
+              contactId: contact.id,
+              groupId: options.defaultGroupId,
+            },
+          });
+        }
+
+        importedCount++;
+      } catch (err: any) {
+        skippedCount++;
+        errors.push(`Row ${i + 1} (${fullName}): ${err.message}`);
+      }
+    }
+
+    await this.auditService.log({
+      organizationId,
+      userId,
+      action: AuditAction.CONTACT_IMPORT,
+      resourceType: 'Contact',
+      resourceId: organizationId,
+      metadata: { importedCount, skippedCount, totalRows: rawRows.length },
+    });
+
+    return {
+      totalRows: rawRows.length,
+      importedCount,
+      skippedCount,
+      errors: errors.slice(0, 10),
+    };
+  }
+
+  private cleanPhoneNumberString(raw: any): string {
+    let s = String(raw || '').trim();
+    if (s.toLowerCase().includes('e+') || s.toLowerCase().includes('e-')) {
+      try {
+        s = Number(s).toLocaleString('fullwide', { useGrouping: false });
+      } catch {}
+    }
+    const clean = s.replace(/[^\d+]/g, '');
+    if (clean.startsWith('+')) return clean;
+    if (clean.length === 10) return `+91${clean}`;
+    if (clean.length === 12 && clean.startsWith('91')) return `+${clean}`;
+    return clean ? `+${clean}` : '';
   }
 }

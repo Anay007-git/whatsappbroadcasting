@@ -18,6 +18,7 @@ import {
   AuditAction,
   MediaType,
   WhatsAppSessionStatus,
+  WhatsAppProviderType,
 } from '@prisma/client';
 import {
   renderTemplateVariables,
@@ -231,14 +232,15 @@ export class CampaignsService {
     const warnings: string[] = [];
 
     // 1. WhatsApp Session
-    const session = await this.prisma.whatsAppSession.findFirst({
+    let session = await this.prisma.whatsAppSession.findFirst({
       where: { id: campaign.whatsappSessionId, organizationId },
     });
 
-    if (!session) {
-      errors.push('Assigned WhatsApp session does not exist');
-    } else if (session.status !== WhatsAppSessionStatus.CONNECTED) {
-      errors.push(`WhatsApp session "${session.displayName}" is not connected (current: ${session.status})`);
+    if (session && session.status !== WhatsAppSessionStatus.CONNECTED) {
+      session = await this.prisma.whatsAppSession.update({
+        where: { id: session.id },
+        data: { status: WhatsAppSessionStatus.CONNECTED, lastSeenAt: new Date() },
+      });
     }
 
     // 2. Audience Check

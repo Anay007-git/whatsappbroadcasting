@@ -1,5 +1,6 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Res, UsePipes } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Query, Res, UsePipes, UseInterceptors, UploadedFile, BadRequestException } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { ContactsService } from './contacts.service';
 import { CurrentUser, AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -14,6 +15,34 @@ import { z } from 'zod';
 @Controller('contacts')
 export class ContactsController {
   constructor(private contactsService: ContactsService) {}
+
+  @Post('import/preview')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Preview contact spreadsheet before importing' })
+  async previewImport(@UploadedFile() file?: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+    return this.contactsService.previewImport(file.buffer);
+  }
+
+  @Post('import/process')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Execute contact spreadsheet import' })
+  async processImport(
+    @CurrentUser() user: AuthenticatedUser,
+    @UploadedFile() file?: Express.Multer.File,
+    @Body('options') optionsRaw?: string,
+  ) {
+    if (!file) {
+      throw new BadRequestException('No file uploaded');
+    }
+    let options = {};
+    try {
+      options = optionsRaw ? JSON.parse(optionsRaw) : {};
+    } catch {}
+    return this.contactsService.processImport(user.organizationId, user.userId, file.buffer, options as any);
+  }
 
   @Get()
   @ApiOperation({ summary: 'List contacts with multi-criteria filtering' })

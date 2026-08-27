@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -35,9 +33,13 @@ services:
       - eventblast-internal
 
   openwa:
-    image: openwa/wa-automate:latest
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.openwa
     container_name: eventblast-openwa
     restart: unless-stopped
+    ports:
+      - "2785:2785"
     environment:
       PORT: 2785
       API_KEY: ${OPENWA_API_KEY:-your_openwa_api_secret_key}
@@ -53,6 +55,8 @@ services:
       dockerfile: infrastructure/docker/Dockerfile.api
     container_name: eventblast-api
     restart: unless-stopped
+    ports:
+      - "4000:4000"
     environment:
       NODE_ENV: production
       PORT: 4000
@@ -64,6 +68,8 @@ services:
       OPENWA_WEBHOOK_SECRET: ${OPENWA_WEBHOOK_SECRET:-your_openwa_webhook_secret_key}
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-openwa}
       APP_URL: ${APP_URL:-http://localhost:3000}
+    volumes:
+      - baileys_auth:/app/.baileys_auth
     depends_on:
       postgres:
         condition: service_healthy
@@ -86,6 +92,8 @@ services:
       OPENWA_API_KEY: ${OPENWA_API_KEY:-your_openwa_api_secret_key}
       WHATSAPP_PROVIDER: ${WHATSAPP_PROVIDER:-openwa}
       MESSAGE_MIN_DELAY_MS: ${MESSAGE_MIN_DELAY_MS:-1000}
+    volumes:
+      - baileys_auth:/app/.baileys_auth
     depends_on:
       postgres:
         condition: service_healthy
@@ -100,6 +108,8 @@ services:
       dockerfile: infrastructure/docker/Dockerfile.web
     container_name: eventblast-web
     restart: unless-stopped
+    ports:
+      - "3000:3000"
     environment:
       NODE_ENV: production
       PORT: 3000
@@ -128,6 +138,7 @@ volumes:
   postgres_data:
   redis_data:
   openwa_sessions:
+  baileys_auth:
 
 networks:
   eventblast-internal:

@@ -10,18 +10,15 @@ const nextConfig = {
     ],
   },
   async rewrites() {
+    const apiUrl = process.env.API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000';
     return [
       {
         source: '/api/:path*',
-        destination: process.env.API_URL
-          ? `${process.env.API_URL}/api/:path*`
-          : 'http://localhost:4000/api/:path*',
+        destination: `${apiUrl}/api/:path*`,
       },
       {
         source: '/uploads/:path*',
-        destination: process.env.API_URL
-          ? `${process.env.API_URL}/uploads/:path*`
-          : 'http://localhost:4000/uploads/:path*',
+        destination: `${apiUrl}/uploads/:path*`,
       },
     ];
   },

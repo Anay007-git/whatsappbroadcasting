@@ -8,7 +8,7 @@
     "generate": "prisma generate",
     "push": "prisma db push",
     "migrate": "prisma migrate dev",
-    "seed": "ts-node src/seed.ts",
+    "seed": "node dist/seed.js",
     "type-check": "tsc --noEmit"
   },
   "dependencies": {

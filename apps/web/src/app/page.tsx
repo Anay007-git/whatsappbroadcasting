@@ -11,12 +11,12 @@ export default function Home() {
   useEffect(() => {
     if (!isLoading) {
       if (user) {
-        router.push('/dashboard');
+        window.location.replace('/dashboard');
       } else {
-        router.push('/login');
+        window.location.replace('/login');
       }
     }
-  }, [user, isLoading, router]);
+  }, [user, isLoading]);
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center">

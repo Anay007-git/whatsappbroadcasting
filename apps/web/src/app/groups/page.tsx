@@ -38,6 +38,22 @@ export default function GroupsPage() {
     createGroupMutation.mutate({ name, description });
   };
 
+  const deleteGroupMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/groups/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['contact-groups'] });
+    },
+    onError: (err: any) => {
+      alert(`Could not delete group: ${err.message}`);
+    },
+  });
+
+  const handleDeleteGroup = (id: string, name: string) => {
+    if (window.confirm(`Are you sure you want to delete group "${name}"?`)) {
+      deleteGroupMutation.mutate(id);
+    }
+  };
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -73,9 +89,18 @@ export default function GroupsPage() {
                   <div className="w-9 h-9 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
                     <Users className="w-4 h-4" />
                   </div>
-                  <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                    {g.contactCount || 0} Contacts
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                      {g.contactCount || 0} Contacts
+                    </span>
+                    <button
+                      onClick={() => handleDeleteGroup(g.id, g.name)}
+                      className="p-1 text-slate-500 hover:text-rose-400 transition-colors"
+                      title="Delete Group"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <h3 className="text-base font-bold text-white">{g.name}</h3>

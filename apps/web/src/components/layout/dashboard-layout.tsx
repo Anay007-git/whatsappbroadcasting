@@ -24,6 +24,7 @@ import {
   Sparkles,
   ExternalLink,
   ChevronRight,
+  Zap,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -54,10 +55,11 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
 
   const navItems = [
     { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-    { name: 'Events', href: '/events', icon: Calendar },
+    { name: '⚡ Quick Broadcaster', href: '/quick-broadcast', icon: Zap },
     { name: 'Campaigns', href: '/campaigns', icon: Send },
     { name: 'Contacts', href: '/contacts', icon: Users },
     { name: 'Groups', href: '/groups', icon: FolderTree },
+    { name: 'Events', href: '/events', icon: Calendar },
     { name: 'Templates', href: '/templates', icon: FileText },
     { name: 'WhatsApp', href: '/whatsapp', icon: Smartphone },
     { name: 'Analytics', href: '/analytics', icon: BarChart3 },

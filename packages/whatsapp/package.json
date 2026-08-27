@@ -11,7 +11,9 @@
   "dependencies": {
     "@eventblast/types": "*",
     "@eventblast/shared": "*",
+    "@whiskeysockets/baileys": "^6.7.0",
     "axios": "^1.6.8",
+    "pino": "^8.19.0",
     "qrcode": "^1.5.3"
   },
   "devDependencies": {

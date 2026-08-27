@@ -1,0 +1,8 @@
+FROM openwa/wa-automate:latest
+
+USER root
+# Clean up expired google repo key and install procps
+RUN rm -f /etc/apt/sources.list.d/google-chrome.list /etc/apt/sources.list.d/google.list /etc/apt/sources.list.d/*chrome*.list 2>/dev/null || true && \
+    apt-get update -o Acquire::AllowInsecureRepositories=true || true && \
+    apt-get install -y --no-install-recommends procps && \
+    rm -rf /var/lib/apt/lists/*

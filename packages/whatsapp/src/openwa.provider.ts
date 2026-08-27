@@ -77,11 +77,22 @@ export class OpenWAProvider implements WhatsAppProvider {
 
   async getSessionStatus(sessionId: string): Promise<WhatsAppSessionInfo> {
     try {
-      const response = await this.client.get(`/api/${sessionId}/status`);
-      const data = response.data;
+      let data;
+      try {
+        const response = await this.client.get(`/api/${sessionId}/status`);
+        data = response.data;
+      } catch {
+        try {
+          const res2 = await this.client.get(`/getConnectionState`);
+          data = res2.data;
+        } catch {
+          const res3 = await this.client.get(`/isLoggedIn`);
+          data = { logged: res3.data };
+        }
+      }
       
       let status = WhatsAppSessionStatus.DISCONNECTED;
-      if (data?.state === 'CONNECTED' || data?.status === 'isLogged' || data?.logged) {
+      if (data?.state === 'CONNECTED' || data?.status === 'isLogged' || data?.logged === true || data === 'CONNECTED' || data === true) {
         status = WhatsAppSessionStatus.CONNECTED;
       } else if (data?.state === 'QR' || data?.qr) {
         status = WhatsAppSessionStatus.QR_READY;
@@ -118,12 +129,28 @@ export class OpenWAProvider implements WhatsAppProvider {
     const jid = this.formatJid(to);
 
     try {
-      const response = await this.client.post(`/api/${sessionId}/send-message`, {
-        to: jid,
-        content: text,
-      });
+      let response;
+      try {
+        response = await this.client.post(`/api/${sessionId}/send-message`, {
+          to: jid,
+          content: text,
+        });
+      } catch (err) {
+        try {
+          response = await this.client.post(`/sendText`, {
+            to: jid,
+            content: text,
+            args: { to: jid, content: text },
+          });
+        } catch (err2) {
+          response = await this.client.post(`/sendMessage`, {
+            to: jid,
+            content: text,
+          });
+        }
+      }
 
-      const messageId = response.data?.id || response.data?.messageId || `msg_${Date.now()}`;
+      const messageId = response?.data?.id || response?.data?.messageId || `msg_${Date.now()}`;
 
       return {
         success: true,

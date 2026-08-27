@@ -189,7 +189,7 @@ export default function DashboardPage() {
                   </div>
 
                   <Link
-                    href={`/events/${upcomingEvent.id}/guests`}
+                    href={`/events/${upcomingEvent.id}`}
                     className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200"
                   >
                     View Guest List

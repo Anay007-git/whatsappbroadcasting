@@ -52,6 +52,10 @@ export class CampaignProcessor {
           apiKey: process.env.OPENWA_API_KEY,
           webhookSecret: process.env.OPENWA_WEBHOOK_SECRET,
         },
+        metaCloudConfig: {
+          phoneNumberId: process.env.META_PHONE_NUMBER_ID || '',
+          accessToken: process.env.META_ACCESS_TOKEN || '',
+        },
       },
     );
 
@@ -179,8 +183,18 @@ export class CampaignProcessor {
         });
       }
 
-      // Operational delay
-      await new Promise((resolve) => setTimeout(resolve, this.minDelayMs));
+      // Anti-ban humanized jitter delay (1.5s - 3.5s)
+      const jitterMs = Math.max(1500, this.minDelayMs) + Math.floor(Math.random() * 1500);
+      await new Promise((resolve) => setTimeout(resolve, jitterMs));
+
+      // Batch cooldown safeguard for large lists
+      const currentSent = await this.prisma.campaignMessage.count({
+        where: { campaignId, status: CampaignMessageStatus.SENT },
+      });
+      if (currentSent > 0 && currentSent % 50 === 0) {
+        console.log(`[Worker] Safeguard: Dispatched 50 messages. Taking 8-second cooldown...`);
+        await new Promise((resolve) => setTimeout(resolve, 8000));
+      }
     }
 
     // Check completion
