@@ -38,11 +38,6 @@ export class BaileysWhatsAppProvider implements WhatsAppProvider {
     return authDir;
   }
 
-  private formatJid(phone: string): string {
-    const cleaned = phone.replace(/[^\d]/g, '');
-    return `${cleaned}@s.whatsapp.net`;
-  }
-
   async createSession(sessionId: string): Promise<WhatsAppSessionInfo> {
     await this.startSession(sessionId);
     return this.getSessionStatus(sessionId);
