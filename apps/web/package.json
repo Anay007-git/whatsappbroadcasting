@@ -4,7 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 3000",
+    "prebuild": "node -e \"const fs=require('fs'),cp=require('child_process'); ['../../packages/types','../../packages/shared','../../packages/validation'].forEach(p => { if(fs.existsSync(p)) cp.execSync('npm run build', {cwd: p, stdio: 'inherit'}); });\" || true",
     "build": "next build",
+    "build:vercel": "next build",
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "next lint",
     "type-check": "tsc --noEmit"
